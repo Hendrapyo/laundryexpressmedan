@@ -798,7 +798,7 @@
       // API details
       const apiKey = "AIzaSyDn9Fbj0PvSt3koaGx8EiZNiI7gQXnLpHg"; // API Key disediakan oleh runtime
       const systemPrompt = "Anda adalah 'Freshy AI', pakar perawatan pakaian dan noda dari Freshy Laundry Medan. Jawab pertanyaan pengguna tentang cara membersihkan noda, merawat jenis kain tertentu, atau tips mencuci. Jawab dengan ramah, informatif, dan praktis (maksimal 3 paragraf pendek). Di akhir jawaban, SELALU tawarkan jasa Freshy Laundry Express secara halus sebagai solusi praktis anti-repot, ingat untuk menyebutkan layanan antar jemput gratis atau express 3 jam kami.";
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
       const payload = {
         contents: [{ parts: [{ text: query }] }],
         systemInstruction: { parts: [{ text: systemPrompt }] }
