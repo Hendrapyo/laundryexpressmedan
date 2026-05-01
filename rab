@@ -1,0 +1,520 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { 
+  Upload, Image as ImageIcon, Download, Calculator, 
+  Trash2, MousePointer2, Square, PlusSquare, 
+  Settings, PlayCircle, FileSpreadsheet, Layers, Maximize
+} from 'lucide-react';
+
+// Konstanta Tipe Elemen & Harga Satuan Default (Simulasi AHSP)
+const ELEMENT_TYPES = {
+  DINDING: { id: 'dinding', name: 'Dinding Bata', color: 'rgba(239, 68, 68, 0.5)', borderColor: '#ef4444', unit: 'm²', defaultHeight: 3, defaultThickness: 0.15, price: 125000, category: 'Arsitektur' },
+  KOLOM: { id: 'kolom', name: 'Kolom Beton', color: 'rgba(59, 130, 246, 0.5)', borderColor: '#3b82f6', unit: 'm³', defaultHeight: 3, defaultThickness: 0, price: 3500000, category: 'Struktur' },
+  BALOK: { id: 'balok', name: 'Balok Beton', color: 'rgba(168, 85, 247, 0.5)', borderColor: '#a855f7', unit: 'm³', defaultHeight: 0.4, defaultThickness: 0.2, price: 3200000, category: 'Struktur' },
+  LANTAI: { id: 'lantai', name: 'Plat Lantai', color: 'rgba(34, 197, 94, 0.3)', borderColor: '#22c55e', unit: 'm³', defaultHeight: 0, defaultThickness: 0.12, price: 2800000, category: 'Struktur' },
+  PINTU: { id: 'pintu', name: 'Pintu/Jendela', color: 'rgba(234, 179, 8, 0.5)', borderColor: '#eab308', unit: 'unit', defaultHeight: 2.1, defaultThickness: 0, price: 1500000, category: 'Arsitektur' }
+};
+
+export default function App() {
+  const [image, setImage] = useState(null);
+  const [elements, setElements] = useState([]);
+  const [scalePx, setScalePx] = useState(100); // 100 pixels...
+  const [scaleM, setScaleM] = useState(1);     // ...sama dengan 1 meter
+  
+  // State Interaksi Canvas
+  const [currentTool, setCurrentTool] = useState('select');
+  const [selectedElementType, setSelectedElementType] = useState('DINDING');
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [startPos, setStartPos] = useState({ x: 0, y: 0 });
+  const [currentPos, setCurrentPos] = useState({ x: 0, y: 0 });
+  
+  // UI State
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [activeTab, setActiveTab] = useState('canvas'); // 'canvas' | 'data'
+
+  const canvasRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Handle Upload Gambar
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          setImage(img);
+          setElements([]); // Reset elemen saat ganti gambar
+        };
+        img.src = event.target.result;
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Render Canvas
+  const drawCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !image) return;
+
+    const ctx = canvas.getContext('2d');
+    
+    // Set ukuran canvas sesuai gambar
+    canvas.width = image.width;
+    canvas.height = image.height;
+
+    // Gambar denah dasar
+    ctx.drawImage(image, 0, 0);
+
+    // Gambar elemen-elemen yang sudah ada
+    elements.forEach(el => {
+      const typeInfo = ELEMENT_TYPES[el.type];
+      ctx.fillStyle = typeInfo.color;
+      ctx.strokeStyle = typeInfo.borderColor;
+      ctx.lineWidth = 2;
+      ctx.fillRect(el.x, el.y, el.w, el.h);
+      ctx.strokeRect(el.x, el.y, el.w, el.h);
+
+      // Label
+      ctx.fillStyle = '#000';
+      ctx.font = '14px Arial';
+      ctx.fillText(`${typeInfo.name} (${el.id.split('-')[1]})`, el.x + 5, el.y + 15);
+    });
+
+    // Gambar kotak sementara saat sedang drag
+    if (isDrawing && currentTool !== 'select') {
+      const typeInfo = ELEMENT_TYPES[selectedElementType];
+      const w = currentPos.x - startPos.x;
+      const h = currentPos.y - startPos.y;
+      
+      ctx.fillStyle = typeInfo.color;
+      ctx.strokeStyle = typeInfo.borderColor;
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.fillRect(startPos.x, startPos.y, w, h);
+      ctx.strokeRect(startPos.x, startPos.y, w, h);
+      ctx.setLineDash([]);
+    }
+  };
+
+  useEffect(() => {
+    drawCanvas();
+  }, [image, elements, isDrawing, currentPos]);
+
+  // Handle Mouse Events untuk Canvas
+  const getMousePos = (e) => {
+    const canvas = canvasRef.current;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  };
+
+  const handleMouseDown = (e) => {
+    if (currentTool === 'select' || !image) return;
+    const pos = getMousePos(e);
+    setStartPos(pos);
+    setCurrentPos(pos);
+    setIsDrawing(true);
+  };
+
+  const handleMouseMove = (e) => {
+    if (!isDrawing) return;
+    setCurrentPos(getMousePos(e));
+  };
+
+  const handleMouseUp = () => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+    
+    let w = currentPos.x - startPos.x;
+    let h = currentPos.y - startPos.y;
+    let x = startPos.x;
+    let y = startPos.y;
+
+    // Normalisasi jika digambar terbalik
+    if (w < 0) { x = currentPos.x; w = Math.abs(w); }
+    if (h < 0) { y = currentPos.y; h = Math.abs(h); }
+
+    if (w > 5 && h > 5) { // Abaikan klik kecil
+      addElement(selectedElementType, x, y, w, h);
+    }
+  };
+
+  // Tambah Elemen ke State
+  const addElement = (typeKey, x, y, w, h) => {
+    const typeInfo = ELEMENT_TYPES[typeKey];
+    
+    // Konversi Pixel ke Meter berdasarkan Scale
+    const pxToM = scaleM / scalePx;
+    const lengthM = Math.max(w, h) * pxToM;
+    const widthM = Math.min(w, h) * pxToM;
+
+    const newElement = {
+      id: `${typeKey}-${Math.floor(Math.random() * 10000)}`,
+      type: typeKey,
+      x, y, w, h,
+      length: lengthM,
+      width: widthM,
+      height: typeInfo.defaultHeight,
+      thickness: typeInfo.defaultThickness,
+      customName: typeInfo.name,
+      price: typeInfo.price
+    };
+
+    setElements([...elements, newElement]);
+  };
+
+  // Hapus Elemen
+  const removeElement = (id) => {
+    setElements(elements.filter(el => el.id !== id));
+  };
+
+  // Update Properti Elemen (Manual Correction)
+  const updateElement = (id, field, value) => {
+    setElements(elements.map(el => 
+      el.id === id ? { ...el, [field]: parseFloat(value) || 0 } : el
+    ));
+  };
+
+  // Kalkulasi Volume
+  const calculateVolume = (el) => {
+    if (el.type === 'DINDING') return (el.length * el.height); // Luas m2 (biasanya volume dinding dihitung luas)
+    if (el.type === 'KOLOM' || el.type === 'BALOK') return (el.length * el.width * el.height); // Volume m3
+    if (el.type === 'LANTAI') return (el.length * el.width * el.thickness); // Volume m3
+    if (el.type === 'PINTU') return 1; // Unit
+    return 0;
+  };
+
+  // Simulasi AI Detection (Mocking)
+  const simulateAIDetection = () => {
+    if (!image) return alert("Silakan unggah gambar denah terlebih dahulu!");
+    
+    setIsAnalyzing(true);
+    setCurrentTool('select');
+    
+    // Simulasi proses loading AI
+    setTimeout(() => {
+      const centerX = image.width / 2;
+      const centerY = image.height / 2;
+      const roomW = 400;
+      const roomH = 300;
+      const wallT = 20;
+
+      // Generate dummy elements to simulate AI finding a room
+      const dummyElements = [
+        // Dinding
+        { id: `DINDING-AI1`, type: 'DINDING', x: centerX - roomW/2, y: centerY - roomH/2, w: roomW, h: wallT, length: 4, width: 0.15, height: 3, thickness: 0.15, customName: 'Dinding Utara', price: 125000 },
+        { id: `DINDING-AI2`, type: 'DINDING', x: centerX - roomW/2, y: centerY + roomH/2, w: roomW + wallT, h: wallT, length: 4, width: 0.15, height: 3, thickness: 0.15, customName: 'Dinding Selatan', price: 125000 },
+        { id: `DINDING-AI3`, type: 'DINDING', x: centerX - roomW/2, y: centerY - roomH/2, w: wallT, h: roomH, length: 3, width: 0.15, height: 3, thickness: 0.15, customName: 'Dinding Barat', price: 125000 },
+        { id: `DINDING-AI4`, type: 'DINDING', x: centerX + roomW/2, y: centerY - roomH/2, w: wallT, h: roomH, length: 3, width: 0.15, height: 3, thickness: 0.15, customName: 'Dinding Timur', price: 125000 },
+        // Kolom di sudut
+        { id: `KOLOM-AI1`, type: 'KOLOM', x: centerX - roomW/2, y: centerY - roomH/2, w: wallT*1.5, h: wallT*1.5, length: 0.2, width: 0.2, height: 3, thickness: 0, customName: 'Kolom K1', price: 3500000 },
+        { id: `KOLOM-AI2`, type: 'KOLOM', x: centerX + roomW/2, y: centerY - roomH/2, w: wallT*1.5, h: wallT*1.5, length: 0.2, width: 0.2, height: 3, thickness: 0, customName: 'Kolom K1', price: 3500000 },
+        { id: `KOLOM-AI3`, type: 'KOLOM', x: centerX - roomW/2, y: centerY + roomH/2, w: wallT*1.5, h: wallT*1.5, length: 0.2, width: 0.2, height: 3, thickness: 0, customName: 'Kolom K1', price: 3500000 },
+        { id: `KOLOM-AI4`, type: 'KOLOM', x: centerX + roomW/2, y: centerY + roomH/2, w: wallT*1.5, h: wallT*1.5, length: 0.2, width: 0.2, height: 3, thickness: 0, customName: 'Kolom K1', price: 3500000 },
+        // Lantai
+        { id: `LANTAI-AI1`, type: 'LANTAI', x: centerX - roomW/2 + wallT, y: centerY - roomH/2 + wallT, w: roomW - wallT, h: roomH - wallT, length: 3.8, width: 2.8, height: 0, thickness: 0.12, customName: 'Plat Lantai Ruang Utama', price: 2800000 },
+      ];
+
+      setElements([...elements, ...dummyElements]);
+      setIsAnalyzing(false);
+      setActiveTab('data');
+    }, 2000);
+  };
+
+  // Export ke CSV (Bisa dibuka di Excel/Google Sheets)
+  const exportToCSV = () => {
+    if (elements.length === 0) return alert("Tidak ada data untuk diekspor!");
+
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "ID Item,Kategori,Nama Item,Tipe,Panjang (m),Lebar (m),Tinggi (m),Tebal (m),Volume/Luasan,Satuan,Harga Satuan (Rp),Total Biaya (Rp)\n";
+
+    let totalRAB = 0;
+
+    elements.forEach(el => {
+      const typeInfo = ELEMENT_TYPES[el.type];
+      const volume = calculateVolume(el);
+      const cost = volume * el.price;
+      totalRAB += cost;
+
+      const row = [
+        el.id,
+        typeInfo.category,
+        el.customName,
+        typeInfo.name,
+        el.length.toFixed(2),
+        el.width.toFixed(2),
+        el.height.toFixed(2),
+        el.thickness.toFixed(2),
+        volume.toFixed(2),
+        typeInfo.unit,
+        el.price,
+        cost.toFixed(2)
+      ].join(",");
+      
+      csvContent += row + "\n";
+    });
+
+    csvContent += `\n,,,,,,,,,,,TOTAL RAB,${totalRAB.toFixed(2)}`;
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", "RAB_Estimasi_Volume.csv");
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // Hitung Total Biaya Keseluruhan
+  const totalCost = elements.reduce((acc, el) => acc + (calculateVolume(el) * el.price), 0);
+
+  return (
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800">
+      {/* Header */}
+      <header className="bg-blue-900 text-white p-4 shadow-md flex justify-between items-center z-10">
+        <div className="flex items-center gap-3">
+          <Calculator className="w-6 h-6 text-blue-400" />
+          <h1 className="text-xl font-bold tracking-wide">AutoTakeoff AI <span className="text-xs bg-blue-700 px-2 py-1 rounded ml-2 font-normal">Pro Edition</span></h1>
+        </div>
+        <div className="flex gap-4">
+          <button 
+            onClick={exportToCSV}
+            className="flex items-center gap-2 bg-green-600 hover:bg-green-500 px-4 py-2 rounded text-sm font-medium transition-colors"
+          >
+            <FileSpreadsheet className="w-4 h-4" /> Export Excel
+          </button>
+        </div>
+      </header>
+
+      {/* Main Layout */}
+      <div className="flex flex-1 overflow-hidden">
+        
+        {/* Sidebar Kiri - Tools & Settings */}
+        <div className="w-72 bg-white shadow-lg z-10 flex flex-col overflow-y-auto border-r border-slate-200">
+          
+          {/* Section: Upload */}
+          <div className="p-5 border-b border-slate-200">
+            <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><ImageIcon className="w-4 h-4"/> Input Denah</h2>
+            <label className="flex flex-col items-center justify-center w-full h-32 border-2 border-slate-300 border-dashed rounded-lg cursor-pointer bg-slate-50 hover:bg-blue-50 transition-colors">
+              <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                <Upload className="w-8 h-8 mb-2 text-slate-400" />
+                <p className="text-sm text-slate-500"><span className="font-semibold">Klik untuk upload</span></p>
+                <p className="text-xs text-slate-400 mt-1">PNG, JPG, PDF (Max 10MB)</p>
+              </div>
+              <input type="file" className="hidden" accept="image/*" onChange={handleImageUpload} />
+            </label>
+          </div>
+
+          {/* Section: AI Detection */}
+          <div className="p-5 border-b border-slate-200 bg-blue-50/50">
+            <h2 className="text-sm font-bold text-blue-800 uppercase mb-3 flex items-center gap-2"><PlayCircle className="w-4 h-4"/> Deteksi Otomatis</h2>
+            <button 
+              onClick={simulateAIDetection}
+              disabled={isAnalyzing || !image}
+              className={`w-full py-3 rounded-lg text-white font-medium flex justify-center items-center gap-2 transition-all shadow-sm
+                ${isAnalyzing ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/30'}
+                ${!image && 'opacity-50 grayscale cursor-not-allowed'}`}
+            >
+              {isAnalyzing ? (
+                <><div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div> Menganalisis...</>
+              ) : (
+                <><Maximize className="w-5 h-5"/> Auto-Detect Elemen (AI)</>
+              )}
+            </button>
+            <p className="text-xs text-slate-500 mt-2 leading-relaxed">
+              *Model AI akan mendeteksi dinding, kolom, dan pintu secara otomatis dari gambar denah.
+            </p>
+          </div>
+
+          {/* Section: Kalibrasi Skala */}
+          <div className="p-5 border-b border-slate-200">
+            <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><Settings className="w-4 h-4"/> Kalibrasi Skala</h2>
+            <div className="flex items-center gap-2 mb-2">
+              <input type="number" value={scalePx} onChange={(e) => setScalePx(e.target.value)} className="w-20 p-2 border rounded text-sm text-center" />
+              <span className="text-sm text-slate-600">px =</span>
+              <input type="number" value={scaleM} onChange={(e) => setScaleM(e.target.value)} className="w-16 p-2 border rounded text-sm text-center" />
+              <span className="text-sm text-slate-600">meter</span>
+            </div>
+          </div>
+
+          {/* Section: Manual Tools */}
+          <div className="p-5 flex-1">
+            <h2 className="text-sm font-bold text-slate-500 uppercase mb-3 flex items-center gap-2"><MousePointer2 className="w-4 h-4"/> Koreksi / Anotasi Manual</h2>
+            
+            <div className="grid grid-cols-2 gap-2 mb-4">
+              <button 
+                onClick={() => setCurrentTool('select')}
+                className={`py-2 px-2 text-sm rounded flex flex-col items-center gap-1 border transition-colors ${currentTool === 'select' ? 'bg-blue-100 border-blue-400 text-blue-700' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'}`}
+              >
+                <MousePointer2 className="w-5 h-5" /> Pointer
+              </button>
+              
+              {Object.entries(ELEMENT_TYPES).map(([key, info]) => (
+                <button 
+                  key={key}
+                  onClick={() => { setCurrentTool('draw'); setSelectedElementType(key); }}
+                  className={`py-2 px-2 text-xs rounded flex flex-col items-center gap-1 border transition-colors ${(currentTool === 'draw' && selectedElementType === key) ? 'bg-blue-100 border-blue-400 text-blue-700' : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-600'}`}
+                >
+                  <Square className="w-5 h-5" style={{ color: info.borderColor }} /> {info.name}
+                </button>
+              ))}
+            </div>
+            
+            <div className="bg-yellow-50 text-yellow-800 p-3 rounded border border-yellow-200 text-xs">
+              <strong>Cara manual:</strong> Pilih elemen di atas, lalu klik & seret (drag) pada gambar untuk menandai area pekerjaan secara manual.
+            </div>
+          </div>
+
+        </div>
+
+        {/* Center Area - Canvas & Data View */}
+        <div className="flex-1 flex flex-col relative overflow-hidden bg-slate-200">
+          
+          {/* Tabs */}
+          <div className="bg-white border-b border-slate-300 flex">
+            <button 
+              onClick={() => setActiveTab('canvas')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'canvas' ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              Visualisasi Denah (2D)
+            </button>
+            <button 
+              onClick={() => setActiveTab('data')}
+              className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'data' ? 'border-blue-600 text-blue-700 bg-blue-50/50' : 'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}
+            >
+              Tabel Rincian Volume & RAB
+              <span className="bg-slate-200 text-slate-600 py-0.5 px-2 rounded-full text-xs">{elements.length} Item</span>
+            </button>
+          </div>
+
+          {/* View: Canvas Area */}
+          <div 
+            className={`flex-1 overflow-auto relative p-4 ${activeTab === 'canvas' ? 'block' : 'hidden'}`}
+            ref={containerRef}
+          >
+            {!image ? (
+              <div className="absolute inset-0 flex items-center justify-center text-slate-400 flex-col gap-3">
+                <ImageIcon className="w-16 h-16 opacity-50" />
+                <p>Silakan upload gambar denah untuk memulai perhitungan.</p>
+              </div>
+            ) : (
+              <div className="inline-block relative shadow-2xl bg-white border border-slate-300" style={{ cursor: currentTool === 'select' ? 'default' : 'crosshair' }}>
+                <canvas 
+                  ref={canvasRef}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                  className="max-w-full"
+                  style={{ display: 'block' }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* View: Data Table (RAB & Volume) */}
+          <div className={`flex-1 overflow-auto bg-white p-6 ${activeTab === 'data' ? 'block' : 'hidden'}`}>
+            <div className="flex justify-between items-end mb-6">
+              <div>
+                <h2 className="text-2xl font-bold text-slate-800">Bill of Quantities (BoQ) / RAB</h2>
+                <p className="text-slate-500 text-sm mt-1">Rincian perhitungan volume otomatis berdasarkan deteksi dimensi gambar.</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-slate-500 font-medium">Estimasi Biaya Total</p>
+                <p className="text-3xl font-bold text-blue-700">Rp {totalCost.toLocaleString('id-ID')}</p>
+              </div>
+            </div>
+
+            {elements.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 bg-slate-50 rounded-lg border border-dashed border-slate-300">
+                <Layers className="w-12 h-12 mx-auto mb-3 opacity-50" />
+                <p>Belum ada data. Lakukan deteksi AI atau gambar elemen secara manual.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-lg shadow-sm">
+                <table className="w-full text-sm text-left whitespace-nowrap">
+                  <thead className="text-xs text-slate-600 uppercase bg-slate-100 border-b border-slate-200">
+                    <tr>
+                      <th className="px-4 py-3">Kategori</th>
+                      <th className="px-4 py-3">Nama Item</th>
+                      <th className="px-4 py-3 text-center">P (m)</th>
+                      <th className="px-4 py-3 text-center">L (m)</th>
+                      <th className="px-4 py-3 text-center">T (m)</th>
+                      <th className="px-4 py-3 text-center">Volume</th>
+                      <th className="px-4 py-3 text-center">Sat</th>
+                      <th className="px-4 py-3 text-right">Harga Satuan</th>
+                      <th className="px-4 py-3 text-right">Total Biaya</th>
+                      <th className="px-4 py-3 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {elements.map((el, idx) => {
+                      const typeInfo = ELEMENT_TYPES[el.type];
+                      const vol = calculateVolume(el);
+                      const cost = vol * el.price;
+
+                      return (
+                        <tr key={el.id} className="bg-white border-b border-slate-100 hover:bg-slate-50 transition-colors">
+                          <td className="px-4 py-3 font-medium">
+                            <span className={`px-2 py-1 rounded text-xs ${typeInfo.category === 'Struktur' ? 'bg-indigo-100 text-indigo-700' : 'bg-orange-100 text-orange-700'}`}>
+                              {typeInfo.category}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 font-medium text-slate-800">
+                            <input 
+                              type="text" 
+                              value={el.customName} 
+                              onChange={(e) => setElements(elements.map(item => item.id === el.id ? {...item, customName: e.target.value} : item))}
+                              className="bg-transparent border-b border-dashed border-slate-300 focus:border-blue-500 focus:outline-none w-full"
+                            />
+                            <div className="text-xs text-slate-400 mt-1">{el.id}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <input type="number" step="0.01" value={el.length.toFixed(2)} onChange={(e) => updateElement(el.id, 'length', e.target.value)} className="w-16 p-1 border rounded text-center text-xs" />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input type="number" step="0.01" value={el.width.toFixed(2)} onChange={(e) => updateElement(el.id, 'width', e.target.value)} className="w-16 p-1 border rounded text-center text-xs" disabled={el.type === 'DINDING' || el.type === 'PINTU'} />
+                          </td>
+                          <td className="px-4 py-3">
+                            <input type="number" step="0.01" value={el.height} onChange={(e) => updateElement(el.id, 'height', e.target.value)} className="w-16 p-1 border rounded text-center text-xs" />
+                          </td>
+                          <td className="px-4 py-3 text-center font-bold text-slate-700 bg-blue-50/30">
+                            {vol.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-3 text-center text-slate-500">
+                            {typeInfo.unit}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <input 
+                              type="number" 
+                              value={el.price} 
+                              onChange={(e) => updateElement(el.id, 'price', e.target.value)} 
+                              className="w-24 p-1 border rounded text-right text-xs bg-slate-50" 
+                            />
+                          </td>
+                          <td className="px-4 py-3 text-right font-semibold text-slate-800">
+                            Rp {cost.toLocaleString('id-ID')}
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            <button onClick={() => removeElement(el.id)} className="text-red-500 hover:text-red-700 p-1 bg-red-50 rounded hover:bg-red-100 transition-colors">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+          
+        </div>
+      </div>
+    </div>
+  );
+}
