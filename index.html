@@ -709,11 +709,11 @@
     document.getElementById('current-year').innerText = new Date().getFullYear();
 
     // Constant Variables
-    const WA_NUMBER = "6281370354431";
+    const WA_NUMBER = "6285930389878";
     const WA_LINK = `https://wa.me/${WA_NUMBER}`;
 
     // WhatsApp Function
-    function orderWa(text = "Halo Freshy Laundry, saya ingin menggunakan layanan antar jemput.") {
+    function orderWa(text = "Halo Freshy Laundry, saya ingin ngelaundry pakaian saya. Bisa antar jemput Kak?") {
       window.open(`${WA_LINK}?text=${encodeURIComponent(text)}`, '_blank');
     }
 
